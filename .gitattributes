@@ -1,0 +1,10 @@
+# Normalise line endings: the repo is edited on Windows and deployed on Linux.
+* text=auto eol=lf
+
+# Binary assets are never normalised.
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Proto contracts are shared across services and platforms.
+*.proto text eol=lf

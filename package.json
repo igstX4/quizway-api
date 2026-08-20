@@ -1,0 +1,33 @@
+{
+  "name": "quizway-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QuizWay backend — NestJS gRPC microservices (gateway, auth, quiz, worker).",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build -w @quizway/contracts -w @quizway/prisma -w @quizway/nest-common",
+    "build:apps": "npm run build -w @quizway/auth-service -w @quizway/quiz-service -w @quizway/worker -w @quizway/gateway",
+    "build": "npm run build:packages && npm run build:apps",
+    "dev:auth": "npm run build:packages && npm run start:dev -w @quizway/auth-service",
+    "dev:quiz": "npm run build:packages && npm run start:dev -w @quizway/quiz-service",
+    "dev:worker": "npm run build:packages && npm run start:dev -w @quizway/worker",
+    "dev:gateway": "npm run build:packages && npm run start:dev -w @quizway/gateway",
+    "prisma:generate": "npm run prisma:generate -w @quizway/prisma",
+    "prisma:migrate": "npm run prisma:migrate -w @quizway/prisma",
+    "prisma:push": "npm run prisma:push -w @quizway/prisma",
+    "prisma:seed": "npm run prisma:seed -w @quizway/prisma",
+    "test": "npm run test --workspaces --if-present",
+    "smoke": "node scripts/smoke.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

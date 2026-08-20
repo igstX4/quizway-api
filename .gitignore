@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+.env
+.env*.local
+!.env.example
+
+packages/prisma/generated/
+
+# local sqlite database
+/data
+
+# logs and local run output
+logs/
+*.log
+*.err
+
+.DS_Store
+.idea/
+.vscode/
