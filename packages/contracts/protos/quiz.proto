@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package quizway.quiz.v1;
+
+// The core domain service: quizzes, their questions and every attempt.
+service QuizService {
+  rpc CreateQuiz (CreateQuizRequest) returns (QuizResponse);
+  rpc ListQuizzes (ListQuizzesRequest) returns (QuizListResponse);
+  rpc GetQuiz (GetQuizRequest) returns (QuizResponse);
+  rpc UpdateQuizStatus (UpdateQuizStatusRequest) returns (QuizResponse);
+  rpc DeleteQuiz (DeleteQuizRequest) returns (DeleteQuizResponse);
+
+  rpc StartAttempt (StartAttemptRequest) returns (StartAttemptResponse);
+  rpc SubmitAttempt (SubmitAttemptRequest) returns (AttemptResultResponse);
+  rpc GetAttemptResult (GetAttemptResultRequest) returns (AttemptResultResponse);
+  rpc GetQuizStats (GetQuizStatsRequest) returns (QuizStatsResponse);
+}
+
+message CreateQuizRequest {
+  string owner_id = 1;
+  string title = 2;
+  string description = 3;
+  string category = 4;
+}
+
+message ListQuizzesRequest {
+  string owner_id = 1;
+}
+
+message GetQuizRequest {
+  string quiz_id = 1;
+  // When set, the request fails if the quiz belongs to somebody else.
+  string owner_id = 2;
+  // Include the answer key (author views) or hide it (participant views).
+  bool include_answer_key = 3;
+}
+
+message UpdateQuizStatusRequest {
+  string quiz_id = 1;
+  string owner_id = 2;
+  string status = 3;
+}
+
+message DeleteQuizRequest {
+  string quiz_id = 1;
+  string owner_id = 2;
+}
+
+message DeleteQuizResponse {
+  bool deleted = 1;
+}
+
+message QuizResponse {
+  Quiz quiz = 1;
+}
+
+message QuizListResponse {
+  repeated QuizSummary quizzes = 1;
+}
+
+message QuizSummary {
+  string id = 1;
+  string title = 2;
+  string category = 3;
+  string status = 4;
+  int32 question_count = 5;
+  int32 attempt_count = 6;
+  string updated_at = 7;
+}
+
+message Quiz {
+  string id = 1;
+  string owner_id = 2;
+  string title = 3;
+  string description = 4;
+  string category = 5;
+  string status = 6;
+  int32 time_limit_sec = 7;
+  int32 passing_score = 8;
+  bool shuffle_questions = 9;
+  repeated Question questions = 10;
+}
+
+message Question {
+  string id = 1;
+  string type = 2;
+  string prompt = 3;
+  string explanation = 4;
+  int32 points = 5;
+  int32 position = 6;
+  repeated Option options = 7;
+}
+
+message Option {
+  string id = 1;
+  string label = 2;
+  // Always false when `include_answer_key` is unset.
+  bool is_correct = 3;
+  int32 position = 4;
+}
+
+message StartAttemptRequest {
+  string quiz_id = 1;
+  string participant_id = 2;
+  string participant_name = 3;
+}
+
+message StartAttemptResponse {
+  string attempt_id = 1;
+  int32 max_score = 2;
+  string started_at = 3;
+}
+
+message SubmittedAnswer {
+  string question_id = 1;
+  repeated string selected_option_ids = 2;
+  string text_answer = 3;
+}
+
+message SubmitAttemptRequest {
+  string attempt_id = 1;
+  repeated SubmittedAnswer answers = 2;
+}
+
+message GradedAnswer {
+  string question_id = 1;
+  bool is_correct = 2;
+  int32 awarded_points = 3;
+}
+
+message AttemptResultResponse {
+  string attempt_id = 1;
+  string quiz_id = 2;
+  string participant_name = 3;
+  int32 score = 4;
+  int32 max_score = 5;
+  double percentage = 6;
+  bool passed = 7;
+  repeated GradedAnswer answers = 8;
+  string submitted_at = 9;
+}
+
+message GetAttemptResultRequest {
+  string attempt_id = 1;
+}
+
+message GetQuizStatsRequest {
+  string quiz_id = 1;
+  string owner_id = 2;
+}
+
+message QuestionStats {
+  string question_id = 1;
+  string prompt = 2;
+  int32 answered = 3;
+  double correct_rate = 4;
+}
+
+message QuizStatsResponse {
+  int32 total_attempts = 1;
+  double average_percentage = 2;
+  double pass_rate = 3;
+  repeated QuestionStats questions = 4;
+}
