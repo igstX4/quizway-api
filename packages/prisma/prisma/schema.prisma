@@ -1,0 +1,144 @@
+// ---------------------------------------------------------------------------
+// QuizWay domain schema — shared by every service through @quizway/prisma.
+//
+// SQLite is the default so the whole backend runs without a database server:
+// one file on disk (plus Redis only when the worker profile is enabled).
+//
+// Two SQLite constraints shape this schema:
+//   • no native enums        → status/type columns are plain strings
+//   • no scalar string lists → JSON-encoded strings (see `selectedOptionIds`)
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         String   @default("USER")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  quizzes  Quiz[]
+  attempts Attempt[]
+
+  @@map("users")
+}
+
+model Quiz {
+  id               String   @id @default(uuid())
+  ownerId          String
+  title            String
+  description      String?
+  category         String?
+  status           String   @default("DRAFT")
+  timeLimitSec     Int?
+  passingScore     Int      @default(60)
+  shuffleQuestions Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  questions Question[]
+  attempts  Attempt[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("quizzes")
+}
+
+model Question {
+  id          String   @id @default(uuid())
+  quizId      String
+  type        String   @default("SINGLE_CHOICE")
+  prompt      String
+  explanation String?
+  points      Int      @default(1)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options Option[]
+  answers Answer[]
+
+  @@index([quizId, position])
+  @@map("questions")
+}
+
+/// Choice options for choice-based questions. For SHORT_TEXT questions the rows
+/// hold accepted answers (isCorrect = true).
+model Option {
+  id         String  @id @default(uuid())
+  questionId String
+  label      String
+  isCorrect  Boolean @default(false)
+  position   Int     @default(0)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, position])
+  @@map("options")
+}
+
+model Attempt {
+  id              String    @id @default(uuid())
+  quizId          String
+  participantId   String?
+  participantName String?
+  status          String    @default("IN_PROGRESS")
+  score           Int       @default(0)
+  maxScore        Int       @default(0)
+  startedAt       DateTime  @default(now())
+  submittedAt     DateTime?
+
+  quiz        Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  participant User?    @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  answers     Answer[]
+
+  @@index([quizId, submittedAt])
+  @@index([participantId])
+  @@map("attempts")
+}
+
+model Answer {
+  id      String @id @default(uuid())
+  attemptId String
+  questionId String
+  /// JSON array of the chosen option ids — SQLite has no list columns.
+  selectedOptionIds String  @default("[]")
+  textAnswer        String?
+  isCorrect         Boolean @default(false)
+  awardedPoints     Int     @default(0)
+
+  attempt  Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@map("answers")
+}
+
+/// Append-only audit trail written by the worker for every graded attempt.
+/// Keeping it in its own table means analytics can evolve without touching the
+/// transactional tables.
+model AuditEvent {
+  id        String   @id @default(uuid())
+  type      String
+  quizId    String?
+  userId    String?
+  /// JSON-encoded payload.
+  payload   String
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@map("audit_events")
+}
