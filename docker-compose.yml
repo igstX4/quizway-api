@@ -1,0 +1,154 @@
+name: quizway-api
+
+# No database server: every service shares one SQLite file on a named volume.
+# Redis (and the worker that needs it) lives behind the `worker` profile:
+#   docker compose --profile worker up --build
+
+x-app: &app-defaults
+  build:
+    context: .
+  restart: unless-stopped
+
+services:
+  # Creates the schema and seeds the demo quiz, then exits. Everything else
+  # waits for it so the SQLite file always exists before services connect.
+  migrate:
+    <<: *app-defaults
+    build:
+      context: .
+      args:
+        APP_NAME: migrate
+    environment:
+      DATABASE_URL: file:/app/data/quizway.db
+    volumes:
+      - sqlite-data:/app/data
+    command:
+      - sh
+      - -c
+      - npm run prisma:push -w @quizway/prisma && node packages/prisma/dist/seed.js
+    restart: "no"
+
+  auth-service:
+    <<: *app-defaults
+    build:
+      context: .
+      args:
+        APP_NAME: auth-service
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/quizway.db
+      AUTH_SERVICE_GRPC_PORT: "50051"
+      JWT_SECRET: ${JWT_SECRET:-change-me-please-use-a-long-random-secret}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+    volumes:
+      - sqlite-data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "50051:50051"
+
+  quiz-service:
+    <<: *app-defaults
+    build:
+      context: .
+      args:
+        APP_NAME: quiz-service
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/quizway.db
+      QUIZ_SERVICE_GRPC_PORT: "50052"
+      QUEUE_DRIVER: ${QUEUE_DRIVER:-memory}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - sqlite-data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "50052:50052"
+
+  gateway:
+    <<: *app-defaults
+    build:
+      context: .
+      args:
+        APP_NAME: gateway
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: "4000"
+      AUTH_SERVICE_GRPC_URL: auth-service:50051
+      QUIZ_SERVICE_GRPC_URL: quiz-service:50052
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    depends_on:
+      - auth-service
+      - quiz-service
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # --- optional queue infrastructure ---------------------------------------
+  redis:
+    image: redis:7-alpine
+    profiles: ["worker"]
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  worker:
+    <<: *app-defaults
+    profiles: ["worker"]
+    build:
+      context: .
+      args:
+        APP_NAME: worker
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/quizway.db
+      QUEUE_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "5"
+    volumes:
+      - sqlite-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Optional API gateway for routing/rate-limiting demos:
+  #   docker compose --profile kong up
+  kong:
+    image: kong:3.7-alpine
+    profiles: ["kong"]
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+    volumes:
+      - ./infra/kong/kong.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    depends_on:
+      - gateway
+
+volumes:
+  sqlite-data:
+  redis-data:

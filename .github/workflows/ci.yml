@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # SQLite only needs a path; unit tests never touch the database.
+  DATABASE_URL: file:./ci.db
+  QUEUE_DRIVER: memory
+  JWT_SECRET: ci-only-secret-value-1234567890
+  AUTH_SERVICE_GRPC_URL: localhost:50051
+  QUIZ_SERVICE_GRPC_URL: localhost:50052
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Build shared packages
+        run: npm run build:packages
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build applications
+        run: npm run build:apps
